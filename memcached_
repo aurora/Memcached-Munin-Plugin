@@ -182,7 +182,7 @@ $graphs{evictions} = {
 if (defined $ARGV[0] && $ARGV[0] eq 'config') {
 
     $0 =~ /(?:([^\/]+)_)?memcached_(.+)*/;
-    my $prefix = $1 ? $1 : '';
+    my $title = $ENV{title} || ($1 ? ucfirst($1) : '');
     my $plugin = $2;
 
     die 'Unknown Plugin Specified: ' . ($plugin ? $plugin : '') unless $graphs{$plugin};
@@ -191,7 +191,7 @@ if (defined $ARGV[0] && $ARGV[0] eq 'config') {
     fetch_stats();
 
     # Now lets go ahead and print out our config.
-    do_config($prefix, $plugin);
+    do_config($title, $plugin);
     exit 0;
 }
 
@@ -319,8 +319,8 @@ sub print_root_output {
 ##
 
 sub do_config {
-    my ($prefix, $plugin) = (@_);
-    print_root_config($prefix, $plugin);
+    my ($title, $plugin) = (@_);
+    print_root_config($title, $plugin);
 
     return;
 }
@@ -330,7 +330,7 @@ sub do_config {
 ##
 
 sub print_root_config {
-    my ($prefix, $plugin) = (@_);
+    my ($title, $plugin) = (@_);
 
     die 'Unknown Plugin Specified: ' . ($plugin ? $plugin : '') unless $graphs{$plugin};
 
@@ -342,7 +342,7 @@ sub print_root_config {
 
     while ( my ($key, $value) = each(%graphconf)) {
         if ($key eq 'title') {
-            print "graph_$key " . ucfirst($prefix) . " $value\n";
+            print "graph_$key " . $title . " $value\n";
         } else {
             print "graph_$key $value\n";
         }
