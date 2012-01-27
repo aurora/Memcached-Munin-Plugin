@@ -72,7 +72,7 @@ use IO::Socket;
 use Munin::Plugin;
 use File::Basename;
 
-if (basename($0) !~ /^memcached_multi_/) {
+if (basename($0) !~ /^(?:([^\/]+)_)?memcached_multi_/) {
     print "This script needs to be named memcached_multi_ and have symlinks which start the same.\n";
     exit 1;
 }
@@ -337,15 +337,16 @@ $graphs{slabitemtime} = {
 if (defined $ARGV[0] && $ARGV[0] eq 'config') {
     # Lets get our plugin from the symlink being called up, we'll also verify its a valid
     # plugin that we have graph information for
-    $0 =~ /memcached_multi_(.+)*/;
-    my $plugin = $1;
+    $0 =~ /(?:([^\/]+)_)?memcached_multi_(.+)*/;
+    my $prefix = $1 ? $1 : '';
+    my $plugin = $2;
     die 'Unknown Plugin Specified: ' . ($plugin ? $plugin : '') unless $graphs{$plugin};
     # We need to fetch the stats before we do any config, cause its needed for multigraph
     # subgraphs which use slab information for title / info per slab
     fetch_stats();
     # Now lets go ahead and print out our config.
-	do_config($plugin);
-	exit 0;
+    do_config($prefix, $plugin);
+    exit 0;
 }
 
 =head2 Autoconf Check
@@ -616,34 +617,34 @@ sub print_submulti_output {
 =cut
 
 sub do_config {
-    my ($plugin) = (@_);
+    my ($prefix, $plugin) = (@_);
     my @subgraphs;
     if ($plugin eq 'memory') {
         @subgraphs = ('slabchnks');
         foreach my $slabid (sort{$a <=> $b} keys %chnks) {
-            print_submulti_config($slabid,$plugin,@subgraphs);
+            print_submulti_config($prefix,$slabid,$plugin,@subgraphs);
         }
-        print_rootmulti_config($plugin);
+        print_rootmulti_config($prefix,$plugin);
     } elsif ($plugin eq 'commands') {
         @subgraphs = ('slabhits');
         foreach my $slabid (sort{$a <=> $b} keys %chnks) {
-            print_submulti_config($slabid,$plugin,@subgraphs);
+            print_submulti_config($prefix,$slabid,$plugin,@subgraphs);
         }
-        print_rootmulti_config($plugin);
+        print_rootmulti_config($prefix,$plugin);
     } elsif ($plugin eq 'evictions') {
         @subgraphs = ('slabevics','slabevictime');
         foreach my $slabid (sort{$a <=> $b}  keys %items) {
-            print_submulti_config($slabid,$plugin,@subgraphs);
+            print_submulti_config($prefix,$slabid,$plugin,@subgraphs);
         }
-        print_rootmulti_config($plugin);
+        print_rootmulti_config($prefix,$plugin);
     } elsif ($plugin eq 'items') {
         @subgraphs = ('slabitems','slabitemtime');
         foreach my $slabid (sort{$a <=> $b} keys %items) {
-            print_submulti_config($slabid,$plugin,@subgraphs);
+            print_submulti_config($prefix,$slabid,$plugin,@subgraphs);
         }
-        print_rootmulti_config($plugin);
+        print_rootmulti_config($prefix,$plugin);
     } else {
-        print_root_config($plugin);
+        print_root_config($prefix,$plugin);
     }
 
     return;
@@ -665,7 +666,7 @@ sub do_config {
 
 sub print_submulti_config {
     # Lets get our slabid, plugin, and subgraphs
-    my ($slabid,$plugin,@subgraphs) = (@_);
+    my ($prefix,$slabid,$plugin,@subgraphs) = (@_);
     my ($slabitems,$slabchnks) = undef;
     # Time to loop over our subgraphs array
     foreach my $sgraph (@subgraphs) {
@@ -675,14 +676,14 @@ sub print_submulti_config {
         # Lets tell munin which graph we are graphing, and what our main graph config info is 
         print "multigraph memcached_$plugin.$sgraph\_$slabid\n";
         while ( my ($key, $value) = each(%graphconf)) {
-	        if ($key eq 'title') {
-	            print "graph_$key $value" . "$slabid" . " ($chnks{$slabid}->{chunk_size} Bytes)\n";
-	        } elsif (($key eq 'vlabel') && (($sgraph eq 'slabevictime') || ($sgraph eq 'slabitemtime'))) {
+            if ($key eq 'title') {
+                print "graph_$key " . ucfirst($prefix) . " $value" . "$slabid" . " ($chnks{$slabid}->{chunk_size} Bytes)\n";
+            } elsif (($key eq 'vlabel') && (($sgraph eq 'slabevictime') || ($sgraph eq 'slabitemtime'))) {
                 $value = time_scale('config',$value);
                 print "graph_$key $value\n";
             } else {
                 print "graph_$key $value\n";
-	        }
+            }
         }
         # Lets tell munin about our data values and how to treat them
         foreach my $dsrc (@{$graph->{datasrc}}) {
@@ -710,13 +711,17 @@ sub print_submulti_config {
 
 sub print_rootmulti_config {
     # Lets get out plugin, set our graph reference and our graph config info
-    my ($plugin) = (@_);
+    my ($prefix,$plugin) = (@_);
     my $graph = $graphs{$plugin};
     my %graphconf = %{$graph->{config}};
     # Lets tell munin about the graph we are referencing and print the main config
     print "multigraph memcached_$plugin\n";
     while ( my ($key, $value) = each(%graphconf)) {
-        print "graph_$key $value\n";
+        if ($key eq 'title') {
+            print "graph_$key " . ucfirst($prefix) . " $value\n";
+        } else {
+            print "graph_$key $value\n";
+        }
     }
     # Lets tell munin about our data values and how to treat them
     foreach my $dsrc (@{$graph->{datasrc}}) {
@@ -742,13 +747,17 @@ sub print_rootmulti_config {
 
 sub print_root_config {
     # Lets get our plugin, set our graph reference and our graph config info
-    my ($plugin) = (@_);
+    my ($prefix,$plugin) = (@_);
     my $graph = $graphs{$plugin};
     my %graphconf = %{$graph->{config}};
     # Lets tell munin about the graph we are referencing and print the main config
     print "graph memcached_$plugin\n";
     while ( my ($key, $value) = each(%graphconf)) {
-        print "graph_$key $value\n";
+        if ($key eq 'title') {
+            print "graph_$key " . ucfirst($prefix) . " $value\n";
+        } else {
+            print "graph_$key $value\n";
+        }
     }
     # Lets tell munin about our data values and how to treat them
     foreach my $dsrc (@{$graph->{datasrc}}) {
